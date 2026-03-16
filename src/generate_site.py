@@ -194,7 +194,7 @@ tr:hover td{{ background:var(--sf2); }}
 
 <!-- HEADER -->
 <h1>Weighted DCA Monthly Advisor</h1>
-<p class="sub">70% SPDR MSCI World / 30% iShares MSCI EM IMI &mdash; buy-the-dip strategy</p>
+<p class="sub">70% SPDR MSCI World (IE00BFY0GT14 / A2N6CW) / 30% iShares MSCI EM IMI (IE00BKM4GZ66 / A111X9) &mdash; buy-the-dip strategy</p>
 <div id="top-status" class="top-status">
   <span id="top-status-text">Loading...</span>
   <div class="progress" id="top-progress"><div class="bar" id="top-bar"></div></div>

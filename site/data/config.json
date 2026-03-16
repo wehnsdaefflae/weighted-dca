@@ -1,7 +1,7 @@
 {
   "firstIWDA": 41.029999,
   "firstEIMI": 24.780001,
-  "swrdRatio": 0.365288,
+  "swrdRatio": 0.365367,
   "defaults": {
     "reference_type": "rolling",
     "window_months": 19,
