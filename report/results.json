@@ -1,0 +1,27 @@
+{
+  "params": {
+    "reference_type": "rolling",
+    "window_months": 19,
+    "drop_threshold": 0.02,
+    "rise_threshold": 0.1749,
+    "drop_factor": 15.0,
+    "rise_factor": 1.7499,
+    "min_mult": 0.0399,
+    "max_mult": 4.6792,
+    "cooldown_months": 3,
+    "base_pct": 0.0517
+  },
+  "train_end": "2024-03-31",
+  "validation_start": "2024-04-30",
+  "optimization_score": 0.022484,
+  "train_stats": {
+    "weighted_roi": 0.225209,
+    "dca_roi": 0.166054,
+    "delta": 0.059155
+  },
+  "val_stats": {
+    "weighted_roi": 0.138759,
+    "dca_roi": 0.133126,
+    "delta": 0.005633
+  }
+}

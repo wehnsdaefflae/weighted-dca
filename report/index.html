@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weighted DCA Optimizer</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text); padding: 24px; line-height: 1.5;
+  }
+  h1 { font-size: 1.6rem; margin-bottom: 4px; }
+  h2 { font-size: 1.15rem; color: var(--accent); margin: 24px 0 12px; }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: 320px 1fr; gap: 24px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+  .controls label {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.85rem; margin-bottom: 2px; color: var(--muted);
+  }
+  .controls label span.val { color: var(--text); font-weight: 600; font-family: monospace; }
+  .controls input[type=range] {
+    width: 100%; accent-color: var(--accent); margin-bottom: 10px;
+  }
+  .controls select {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 8px; margin-bottom: 10px; font-size: 0.85rem;
+  }
+  .controls .sep {
+    border-top: 1px solid var(--border); margin: 12px 0;
+  }
+  .controls button {
+    width: 100%; padding: 8px; border: 1px solid var(--accent);
+    background: transparent; color: var(--accent); border-radius: 6px;
+    cursor: pointer; font-size: 0.85rem; margin-top: 4px;
+  }
+  .controls button:hover { background: var(--accent); color: var(--bg); }
+
+  .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .kpi {
+    flex: 1; min-width: 140px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+    text-align: center;
+  }
+  .kpi .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }
+  .kpi .val { font-size: 1.3rem; font-weight: 700; margin-top: 4px; }
+  .kpi .sub { font-size: 0.75rem; color: var(--muted); }
+  .positive { color: var(--green); }
+  .negative { color: var(--red); }
+
+  .chart { width: 100%; height: 370px; margin-bottom: 16px; }
+  .period-info {
+    font-size: 0.8rem; color: var(--muted); padding: 8px 0;
+    border-top: 1px solid var(--border); margin-top: 8px;
+  }
+  .period-info b { color: var(--yellow); }
+</style>
+</head>
+<body>
+
+<h1>Weighted DCA Strategy Report</h1>
+<p class="subtitle">70% MSCI World / 30% MSCI EM IMI &mdash; percentage-based buy-the-dip strategy</p>
+
+<div class="grid">
+  <!-- LEFT: Controls -->
+  <div>
+    <div class="panel controls">
+      <h2 style="margin-top:0">Strategy Parameters</h2>
+
+      <label>Reference type
+        <select id="ctrl-reftype">
+          <option value="rolling">Rolling window</option>
+          <option value="ath">All-time high</option>
+        </select>
+      </label>
+
+      <label>Window (months) <span class="val" id="v-window"></span></label>
+      <input type="range" id="ctrl-window" min="3" max="36" step="1">
+
+      <div class="sep"></div>
+
+      <label>Base % of cash <span class="val" id="v-basepct"></span></label>
+      <input type="range" id="ctrl-basepct" min="0.01" max="0.25" step="0.005">
+
+      <label>Drop threshold <span class="val" id="v-dropth"></span></label>
+      <input type="range" id="ctrl-dropth" min="0.01" max="0.40" step="0.01">
+
+      <label>Rise threshold <span class="val" id="v-riseth"></span></label>
+      <input type="range" id="ctrl-riseth" min="0.01" max="0.40" step="0.01">
+
+      <label>Drop factor <span class="val" id="v-dropf"></span></label>
+      <input type="range" id="ctrl-dropf" min="0.5" max="15" step="0.1">
+
+      <label>Rise factor <span class="val" id="v-risef"></span></label>
+      <input type="range" id="ctrl-risef" min="0.5" max="10" step="0.1">
+
+      <div class="sep"></div>
+
+      <label>Min multiplier <span class="val" id="v-minmult"></span></label>
+      <input type="range" id="ctrl-minmult" min="0" max="1" step="0.01">
+
+      <label>Max multiplier <span class="val" id="v-maxmult"></span></label>
+      <input type="range" id="ctrl-maxmult" min="1" max="8" step="0.1">
+
+      <label>Cooldown (months) <span class="val" id="v-cooldown"></span></label>
+      <input type="range" id="ctrl-cooldown" min="0" max="12" step="1">
+
+      <div class="sep"></div>
+
+      <label>Initial cash (&euro;) <span class="val" id="v-cash"></span></label>
+      <input type="range" id="ctrl-cash" min="10000" max="1000000" step="10000">
+
+      <label>Simulation window (months) <span class="val" id="v-simwindow"></span></label>
+      <input type="range" id="ctrl-simwindow" min="12" max="120" step="1">
+
+      <div class="sep"></div>
+
+      <label>Time period
+        <select id="ctrl-period">
+          <option value="full">Full history</option>
+          <option value="train">Training only</option>
+          <option value="validation">Validation only</option>
+        </select>
+      </label>
+
+      <label>Start from month #
+        <select id="ctrl-startmonth"></select>
+      </label>
+
+      <div class="sep"></div>
+      <button id="btn-reset">Reset to Optimal</button>
+    </div>
+
+    <div class="period-info">
+      Training ends: <b>2024-03-31</b><br>
+      Validation starts: <b>2024-04-30</b><br>
+      Optimization score: <b>2.2484%</b> mean outperf.
+    </div>
+  </div>
+
+  <!-- RIGHT: Results -->
+  <div>
+    <div class="kpi-row">
+      <div class="kpi"><div class="label">Weighted DCA</div><div class="val" id="kpi-wroi">-</div><div class="sub" id="kpi-wval"></div></div>
+      <div class="kpi"><div class="label">Fixed-% DCA</div><div class="val" id="kpi-droi">-</div><div class="sub" id="kpi-dval"></div></div>
+      <div class="kpi"><div class="label">Lump Sum</div><div class="val" id="kpi-lroi">-</div><div class="sub" id="kpi-lval"></div></div>
+      <div class="kpi"><div class="label">Outperformance</div><div class="val" id="kpi-delta">-</div><div class="sub">vs fixed-% DCA</div></div>
+    </div>
+
+    <div class="chart" id="chart-value"></div>
+    <div class="chart" id="chart-invest"></div>
+    <div class="chart" id="chart-drop"></div>
+  </div>
+</div>
+
+<script>
+// === EMBEDDED DATA ===
+const ALL_PRICES = [{"date": "2014-05-31", "price": 100.0}, {"date": "2014-06-30", "price": 102.2927}, {"date": "2014-07-31", "price": 101.6251}, {"date": "2014-08-31", "price": 103.7515}, {"date": "2014-09-30", "price": 100.0204}, {"date": "2014-10-31", "price": 100.2834}, {"date": "2014-11-30", "price": 101.5184}, {"date": "2014-12-31", "price": 99.7442}, {"date": "2015-01-31", "price": 97.7834}, {"date": "2015-02-28", "price": 103.0374}, {"date": "2015-03-31", "price": 101.5614}, {"date": "2015-04-30", "price": 105.4659}, {"date": "2015-05-31", "price": 104.1914}, {"date": "2015-06-30", "price": 101.6049}, {"date": "2015-07-31", "price": 101.1642}, {"date": "2015-08-31", "price": 94.2604}, {"date": "2015-09-30", "price": 90.4355}, {"date": "2015-10-31", "price": 97.4567}, {"date": "2015-11-30", "price": 96.3313}, {"date": "2015-12-31", "price": 94.7142}, {"date": "2016-01-31", "price": 87.9646}, {"date": "2016-02-29", "price": 88.838}, {"date": "2016-03-31", "price": 95.6317}, {"date": "2016-04-30", "price": 96.1293}, {"date": "2016-05-31", "price": 96.142}, {"date": "2016-06-30", "price": 96.0434}, {"date": "2016-07-31", "price": 100.5699}, {"date": "2016-08-31", "price": 101.2005}, {"date": "2016-09-30", "price": 102.4294}, {"date": "2016-10-31", "price": 100.7784}, {"date": "2016-11-30", "price": 100.4538}, {"date": "2016-12-31", "price": 102.4757}, {"date": "2017-01-31", "price": 105.1519}, {"date": "2017-02-28", "price": 108.5365}, {"date": "2017-03-31", "price": 110.3074}, {"date": "2017-04-30", "price": 111.932}, {"date": "2017-05-31", "price": 114.2984}, {"date": "2017-06-30", "price": 114.9885}, {"date": "2017-07-31", "price": 118.8111}, {"date": "2017-08-31", "price": 119.4907}, {"date": "2017-09-30", "price": 121.5869}, {"date": "2017-10-31", "price": 124.5598}, {"date": "2017-11-30", "price": 126.4546}, {"date": "2017-12-31", "price": 129.586}, {"date": "2018-01-31", "price": 136.6841}, {"date": "2018-02-28", "price": 131.4031}, {"date": "2018-03-31", "price": 128.3729}, {"date": "2018-04-30", "price": 129.6019}, {"date": "2018-05-31", "price": 128.5426}, {"date": "2018-06-30", "price": 127.1955}, {"date": "2018-07-31", "price": 130.6868}, {"date": "2018-08-31", "price": 130.3418}, {"date": "2018-09-30", "price": 131.2824}, {"date": "2018-10-31", "price": 120.9103}, {"date": "2018-11-30", "price": 122.739}, {"date": "2018-12-31", "price": 116.0155}, {"date": "2019-01-31", "price": 124.8532}, {"date": "2019-02-28", "price": 127.6088}, {"date": "2019-03-31", "price": 128.9929}, {"date": "2019-04-30", "price": 132.9009}, {"date": "2019-05-31", "price": 125.3052}, {"date": "2019-06-30", "price": 132.9064}, {"date": "2019-07-31", "price": 133.6268}, {"date": "2019-08-31", "price": 129.0173}, {"date": "2019-09-30", "price": 132.0783}, {"date": "2019-10-31", "price": 135.4265}, {"date": "2019-11-30", "price": 138.9057}, {"date": "2019-12-31", "price": 144.1074}, {"date": "2020-01-31", "price": 141.7356}, {"date": "2020-02-29", "price": 129.6105}, {"date": "2020-03-31", "price": 114.2172}, {"date": "2020-04-30", "price": 124.3841}, {"date": "2020-05-31", "price": 128.5227}, {"date": "2020-06-30", "price": 133.8597}, {"date": "2020-07-31", "price": 141.3948}, {"date": "2020-08-31", "price": 150.608}, {"date": "2020-09-30", "price": 146.2251}, {"date": "2020-10-31", "price": 142.7524}, {"date": "2020-11-30", "price": 159.6934}, {"date": "2020-12-31", "price": 168.2493}, {"date": "2021-01-31", "price": 168.8094}, {"date": "2021-02-28", "price": 172.7862}, {"date": "2021-03-31", "price": 176.1235}, {"date": "2021-04-30", "price": 182.9109}, {"date": "2021-05-31", "price": 186.0522}, {"date": "2021-06-30", "price": 188.0499}, {"date": "2021-07-31", "price": 188.3076}, {"date": "2021-08-31", "price": 192.581}, {"date": "2021-09-30", "price": 185.7701}, {"date": "2021-10-31", "price": 193.0197}, {"date": "2021-11-30", "price": 188.435}, {"date": "2021-12-31", "price": 195.6543}, {"date": "2022-01-31", "price": 185.7674}, {"date": "2022-02-28", "price": 182.0698}, {"date": "2022-03-31", "price": 186.1628}, {"date": "2022-04-30", "price": 173.0741}, {"date": "2022-05-31", "price": 170.4941}, {"date": "2022-06-30", "price": 156.4335}, {"date": "2022-07-31", "price": 165.4729}, {"date": "2022-08-31", "price": 161.2513}, {"date": "2022-09-30", "price": 147.2849}, {"date": "2022-10-31", "price": 152.6767}, {"date": "2022-11-30", "price": 162.8407}, {"date": "2022-12-31", "price": 159.5403}, {"date": "2023-01-31", "price": 170.5018}, {"date": "2023-02-28", "price": 165.8236}, {"date": "2023-03-31", "price": 170.2499}, {"date": "2023-04-30", "price": 172.5256}, {"date": "2023-05-31", "price": 170.0607}, {"date": "2023-06-30", "price": 180.4967}, {"date": "2023-07-31", "price": 187.5261}, {"date": "2023-08-31", "price": 181.8748}, {"date": "2023-09-30", "price": 175.0544}, {"date": "2023-10-31", "price": 168.5913}, {"date": "2023-11-30", "price": 183.9578}, {"date": "2023-12-31", "price": 193.6657}, {"date": "2024-01-31", "price": 194.5613}, {"date": "2024-02-29", "price": 200.9661}, {"date": "2024-03-31", "price": 207.9466}, {"date": "2024-04-30", "price": 202.9808}, {"date": "2024-05-31", "price": 207.7605}, {"date": "2024-06-30", "price": 215.6077}, {"date": "2024-07-31", "price": 218.0964}, {"date": "2024-08-31", "price": 221.5943}, {"date": "2024-09-30", "price": 227.9269}, {"date": "2024-10-31", "price": 223.4137}, {"date": "2024-11-30", "price": 230.5457}, {"date": "2024-12-31", "price": 226.1502}, {"date": "2025-01-31", "price": 233.9909}, {"date": "2025-02-28", "price": 228.9866}, {"date": "2025-03-31", "price": 221.1849}, {"date": "2025-04-30", "price": 222.8915}, {"date": "2025-05-31", "price": 236.6703}, {"date": "2025-06-30", "price": 248.3026}, {"date": "2025-07-31", "price": 253.0609}, {"date": "2025-08-31", "price": 258.0524}, {"date": "2025-09-30", "price": 266.9116}, {"date": "2025-10-31", "price": 274.2255}, {"date": "2025-11-30", "price": 274.0252}, {"date": "2025-12-31", "price": 278.3074}, {"date": "2026-01-31", "price": 286.3459}, {"date": "2026-02-28", "price": 291.132}, {"date": "2026-03-31", "price": 274.6909}];
+const OPTIMAL = {"reference_type": "rolling", "window_months": 19, "drop_threshold": 0.02, "rise_threshold": 0.1749, "drop_factor": 15.0, "rise_factor": 1.7499, "min_mult": 0.0399, "max_mult": 4.6792, "cooldown_months": 3, "base_pct": 0.0517};
+const TRAIN_END = "2024-03-31";
+const VAL_START = "2024-04-30";
+const DEFAULT_CASH = 200000;
+
+// === STRATEGY (percentage-based, mirrors Python exactly) ===
+function runWeightedDCA(prices, p, initialCash) {
+  const n = Math.min(prices.length, p._simWindow || 24);
+  let cash = initialCash, cumUnits = 0, cumInvested = 0, cooldown = 0;
+  const rows = [];
+
+  for (let i = 0; i < n; i++) {
+    const price = prices[i].price;
+    const date = prices[i].date;
+
+    let ref;
+    if (p.reference_type === "ath") {
+      ref = Math.max(...prices.slice(0, i + 1).map(d => d.price));
+    } else {
+      const lb = Math.max(0, i - p.window_months);
+      ref = Math.max(...prices.slice(lb, i + 1).map(d => d.price));
+    }
+
+    const dropPct = (ref - price) / ref;
+
+    let mult;
+    if (dropPct > p.drop_threshold) {
+      mult = 1 + p.drop_factor * (dropPct - p.drop_threshold);
+    } else if (dropPct < -p.rise_threshold) {
+      mult = Math.max(0, 1 - p.rise_factor * (-dropPct - p.rise_threshold));
+    } else {
+      mult = 1;
+    }
+
+    if (cooldown > 0) { mult = Math.min(mult, 1); cooldown--; }
+    mult = Math.max(p.min_mult, Math.min(p.max_mult, mult));
+
+    let inv = cash * p.base_pct * mult;
+    inv = Math.min(inv, cash);
+
+    if (mult >= p.max_mult * 0.95) cooldown = p.cooldown_months;
+
+    const units = price > 0 ? inv / price : 0;
+    cumUnits += units; cumInvested += inv; cash -= inv;
+
+    rows.push({ date, price, ref, dropPct, mult, inv, units, cumUnits, cumInvested, cash, value: cumUnits * price });
+  }
+  return rows;
+}
+
+function runRegularDCA(prices, basePct, initialCash, simWindow) {
+  const n = Math.min(prices.length, simWindow || 24);
+  let cash = initialCash, cumUnits = 0, cumInvested = 0;
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const price = prices[i].price;
+    let inv = cash * basePct;
+    inv = Math.min(inv, cash);
+    cumUnits += price > 0 ? inv / price : 0;
+    cumInvested += inv; cash -= inv;
+    rows.push({ date: prices[i].date, price, inv, cumUnits, cumInvested, cash, value: cumUnits * price });
+  }
+  return rows;
+}
+
+function runLumpSum(prices, initialCash, simWindow) {
+  const n = Math.min(prices.length, simWindow || 24);
+  const units = prices[0].price > 0 ? initialCash / prices[0].price : 0;
+  return prices.slice(0, n).map((d) => ({
+    date: d.date, price: d.price, value: units * d.price, cumInvested: initialCash, cash: 0,
+  }));
+}
+
+// === CONTROLS ===
+const C = {
+  reftype: document.getElementById('ctrl-reftype'),
+  window: document.getElementById('ctrl-window'),
+  basepct: document.getElementById('ctrl-basepct'),
+  dropth: document.getElementById('ctrl-dropth'),
+  riseth: document.getElementById('ctrl-riseth'),
+  dropf: document.getElementById('ctrl-dropf'),
+  risef: document.getElementById('ctrl-risef'),
+  minmult: document.getElementById('ctrl-minmult'),
+  maxmult: document.getElementById('ctrl-maxmult'),
+  cooldown: document.getElementById('ctrl-cooldown'),
+  cash: document.getElementById('ctrl-cash'),
+  simwindow: document.getElementById('ctrl-simwindow'),
+  period: document.getElementById('ctrl-period'),
+  startmonth: document.getElementById('ctrl-startmonth'),
+};
+
+function setOptimal() {
+  C.reftype.value = OPTIMAL.reference_type;
+  C.window.value = OPTIMAL.window_months;
+  C.basepct.value = OPTIMAL.base_pct;
+  C.dropth.value = OPTIMAL.drop_threshold;
+  C.riseth.value = OPTIMAL.rise_threshold;
+  C.dropf.value = OPTIMAL.drop_factor;
+  C.risef.value = OPTIMAL.rise_factor;
+  C.minmult.value = OPTIMAL.min_mult;
+  C.maxmult.value = OPTIMAL.max_mult;
+  C.cooldown.value = OPTIMAL.cooldown_months;
+  C.cash.value = DEFAULT_CASH;
+  C.simwindow.value = 24;
+  C.period.value = "full";
+}
+
+function readParams() {
+  return {
+    reference_type: C.reftype.value,
+    window_months: +C.window.value,
+    base_pct: +C.basepct.value,
+    drop_threshold: +C.dropth.value,
+    rise_threshold: +C.riseth.value,
+    drop_factor: +C.dropf.value,
+    rise_factor: +C.risef.value,
+    min_mult: +C.minmult.value,
+    max_mult: +C.maxmult.value,
+    cooldown_months: +C.cooldown.value,
+    _simWindow: +C.simwindow.value,
+  };
+}
+
+function updateLabels() {
+  document.getElementById('v-window').textContent = C.window.value;
+  document.getElementById('v-basepct').textContent = (C.basepct.value * 100).toFixed(1) + '%';
+  document.getElementById('v-dropth').textContent = (C.dropth.value * 100).toFixed(0) + '%';
+  document.getElementById('v-riseth').textContent = (C.riseth.value * 100).toFixed(0) + '%';
+  document.getElementById('v-dropf').textContent = (+C.dropf.value).toFixed(1) + 'x';
+  document.getElementById('v-risef').textContent = (+C.risef.value).toFixed(1) + 'x';
+  document.getElementById('v-minmult').textContent = (+C.minmult.value).toFixed(2) + 'x';
+  document.getElementById('v-maxmult').textContent = (+C.maxmult.value).toFixed(1) + 'x';
+  document.getElementById('v-cooldown').textContent = C.cooldown.value;
+  document.getElementById('v-cash').textContent = '\u20ac' + (+C.cash.value).toLocaleString();
+  document.getElementById('v-simwindow').textContent = C.simwindow.value;
+}
+
+function populateStartMonths() {
+  const sel = C.startmonth;
+  sel.innerHTML = '';
+  ALL_PRICES.forEach((d, i) => {
+    if (i % 6 === 0) {
+      const opt = document.createElement('option');
+      opt.value = i; opt.textContent = d.date;
+      sel.appendChild(opt);
+    }
+  });
+}
+
+function getActivePrices() {
+  const period = C.period.value;
+  let prices = ALL_PRICES;
+
+  if (period === 'train') {
+    prices = ALL_PRICES.filter(d => d.date <= TRAIN_END);
+  } else if (period === 'validation') {
+    prices = ALL_PRICES.filter(d => d.date >= VAL_START);
+  }
+
+  const startIdx = +C.startmonth.value;
+  const globalStart = ALL_PRICES[startIdx]?.date;
+  if (globalStart) {
+    const idx = prices.findIndex(d => d.date >= globalStart);
+    if (idx > 0) prices = prices.slice(idx);
+  }
+
+  return prices;
+}
+
+// === PLOTTING ===
+const plotLayout = (title) => ({
+  title: { text: title, font: { size: 14, color: '#e6edf3' } },
+  paper_bgcolor: '#0d1117', plot_bgcolor: '#161b22',
+  font: { color: '#8b949e', size: 11 },
+  xaxis: { gridcolor: '#30363d', linecolor: '#30363d' },
+  yaxis: { gridcolor: '#30363d', linecolor: '#30363d' },
+  margin: { l: 60, r: 20, t: 40, b: 40 },
+  legend: { orientation: 'h', y: -0.15, font: { size: 11 } },
+  hovermode: 'x unified',
+});
+
+const plotConfig = { responsive: true, displayModeBar: false };
+
+function fmtPct(v) { return (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%'; }
+function fmtEur(v) { return '\u20ac' + v.toLocaleString(undefined, {maximumFractionDigits: 0}); }
+
+function update() {
+  updateLabels();
+  const p = readParams();
+  const prices = getActivePrices();
+  const initialCash = +C.cash.value;
+  const simWindow = +C.simwindow.value;
+
+  if (prices.length < 2) return;
+
+  const w = runWeightedDCA(prices, p, initialCash);
+  const d = runRegularDCA(prices, p.base_pct, initialCash, simWindow);
+  const l = runLumpSum(prices, initialCash, simWindow);
+
+  const last = (arr) => arr[arr.length - 1];
+
+  // KPIs: total wealth = portfolio value + remaining cash
+  const wLast = last(w), dLast = last(d), lLast = last(l);
+  const wWealth = wLast.value + wLast.cash;
+  const dWealth = dLast.value + dLast.cash;
+  const lWealth = lLast.value + (lLast.cash || 0);
+  const wRoi = wWealth / initialCash - 1;
+  const dRoi = dWealth / initialCash - 1;
+  const lRoi = lWealth / initialCash - 1;
+  const delta = wRoi - dRoi;
+
+  const kpiW = document.getElementById('kpi-wroi');
+  const kpiD = document.getElementById('kpi-droi');
+  const kpiL = document.getElementById('kpi-lroi');
+  const kpiDelta = document.getElementById('kpi-delta');
+
+  kpiW.textContent = fmtPct(wRoi);
+  kpiW.className = 'val ' + (wRoi >= 0 ? 'positive' : 'negative');
+  document.getElementById('kpi-wval').textContent = fmtEur(wWealth);
+
+  kpiD.textContent = fmtPct(dRoi);
+  kpiD.className = 'val ' + (dRoi >= 0 ? 'positive' : 'negative');
+  document.getElementById('kpi-dval').textContent = fmtEur(dWealth);
+
+  kpiL.textContent = fmtPct(lRoi);
+  kpiL.className = 'val ' + (lRoi >= 0 ? 'positive' : 'negative');
+  document.getElementById('kpi-lval').textContent = fmtEur(lWealth);
+
+  kpiDelta.textContent = fmtPct(delta);
+  kpiDelta.className = 'val ' + (delta >= 0 ? 'positive' : 'negative');
+
+  // Chart 1: Total wealth over time
+  Plotly.react('chart-value', [
+    { x: w.map(r => r.date), y: w.map(r => r.value + r.cash), name: 'Weighted DCA', line: { color: '#58a6ff', width: 2 } },
+    { x: d.map(r => r.date), y: d.map(r => r.value + r.cash), name: 'Fixed-% DCA', line: { color: '#8b949e', width: 2 } },
+    { x: l.map(r => r.date), y: l.map(r => r.value), name: 'Lump Sum', line: { color: '#d29922', width: 1.5, dash: 'dot' } },
+    { x: w.map(r => r.date), y: w.map(r => r.cumInvested), name: 'Deployed', line: { color: '#f85149', width: 1, dash: 'dash' } },
+  ], plotLayout('Total Wealth (&euro;)'), plotConfig);
+
+  // Chart 2: Monthly investment amounts
+  Plotly.react('chart-invest', [
+    { x: w.map(r => r.date), y: w.map(r => r.inv), type: 'bar', name: 'Weighted', marker: { color: w.map(r => r.mult > 1 ? '#3fb950' : r.mult < 1 ? '#f85149' : '#58a6ff') } },
+    { x: d.map(r => r.date), y: d.map(r => r.inv), name: 'Fixed-%', line: { color: '#8b949e', width: 1.5, dash: 'dash' } },
+  ], {...plotLayout('Monthly Investment (&euro;)'), barmode: 'overlay'}, plotConfig);
+
+  // Chart 3: Drop from reference + multiplier
+  Plotly.react('chart-drop', [
+    { x: w.map(r => r.date), y: w.map(r => r.dropPct * 100), name: 'Drop from ref (%)', line: { color: '#f85149', width: 1.5 }, yaxis: 'y' },
+    { x: w.map(r => r.date), y: w.map(r => r.mult), name: 'Multiplier', line: { color: '#3fb950', width: 1.5 }, yaxis: 'y2' },
+  ], {
+    ...plotLayout('Market Drop & Investment Multiplier'),
+    yaxis: { title: 'Drop %', gridcolor: '#30363d', linecolor: '#30363d', side: 'left' },
+    yaxis2: { title: 'Multiplier', overlaying: 'y', side: 'right', gridcolor: 'transparent' },
+  }, plotConfig);
+}
+
+// === INIT ===
+populateStartMonths();
+setOptimal();
+update();
+
+Object.values(C).forEach(el => el.addEventListener('input', update));
+document.getElementById('btn-reset').addEventListener('click', () => { setOptimal(); update(); });
+</script>
+</body>
+</html>

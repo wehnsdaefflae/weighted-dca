@@ -1,0 +1,4 @@
+# Prevent direct browser access to data files
+<FilesMatch "\.(json)$">
+    Require all denied
+</FilesMatch>
